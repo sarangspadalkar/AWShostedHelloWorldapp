@@ -34,7 +34,7 @@ In the event of application failure, or application version update, we can alway
 
 For some unforseen reason the API fails, we can configure the Application Load Balancer Listener to route the incoming requests to the fallback Green target group and once the API is up we can route the traffic to the Blue target group in a gradually increasing percentage until 100% of the traffic is rerouted towards the Holiday Aware Application. 
 
-### Network Flow Diagram:
+### Network Flow:
 
 Before a client sends a request to the load balancer, it resolves the load balancer's domain name using a Domain Name System (DNS) server. The DNS entry is controlled by Amazon, because the load balancers are in the amazonaws.com domain. The Amazon DNS servers return one or more IP addresses to the client. These are the IP addresses of the load balancer nodes for the load balancer.
 
