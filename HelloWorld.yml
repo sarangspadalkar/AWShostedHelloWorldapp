@@ -1,0 +1,231 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation Sample Template for an Hello World application.
+# Parameters:
+#   KeyName:
+#     Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+#     Type: "AWS::EC2::KeyPair::KeyName"
+
+Resources:
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP from the load balancer only
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: 0.0.0.0/0
+
+  ApplicationLoadBalancer:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      Subnets: ["subnet-3d876d5b", "subnet-076a9b26"]
+      SecurityGroups:
+        - Fn::GetAtt: [SecurityGroup, GroupId]
+
+  ALBListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref BlueTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: "80"
+      Protocol: HTTP
+
+  GreenTargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckPath: "/index.html"
+      HealthCheckPort: 80
+      HealthCheckProtocol: "HTTP"
+      HealthCheckIntervalSeconds: 10
+      VpcId: "vpc-8e6660f4"
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: "true"
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: "30"
+
+  BlueTargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckPath: "/index.html"
+      HealthCheckPort: 80
+      HealthCheckProtocol: "HTTP"
+      HealthCheckIntervalSeconds: 10
+      VpcId: "vpc-8e6660f4"
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: "true"
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: "30"
+
+  BlueWebServerGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      LaunchConfigurationName: !Ref LaunchConfig
+      AvailabilityZones: ["us-east-1a"]
+      MinSize: "1"
+      MaxSize: "2"
+      DesiredCapacity: 1
+      TargetGroupARNs:
+        - !Ref BlueTargetGroup
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: True
+  LaunchConfig:
+    Type: "AWS::AutoScaling::LaunchConfiguration"
+    Properties:
+      ImageId: ami-0fc61db8544a617ed
+      InstanceType: t2.nano
+      SecurityGroups:
+        - !Ref SecurityGroup
+      # KeyName: !Ref KeyName
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -x
+
+          yum -y install httpd
+          service httpd start
+          chkconfig httpd on
+          yum -y update
+          LOCAL_IPV4=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)
+          cat << EOF >> /etc/hosts
+          $LOCAL_IPV4  holiday-aware-web
+          EOF
+          echo > /etc/sysconfig/network
+          cat << EOF >> /etc/sysconfig/network
+          NETWORKING=yes
+          HOSTNAME=holiday-aware-web
+          NOZEROCONF=yes
+          EOF
+          hostname holiday-aware-web
+          service network restart
+          yum -y install jq
+          date_time=`date`
+          date_today=`date +%Y-%m-%d`
+          >/var/www/html/index.html
+          yum -y install jq
+          curl -s https://date.nager.at/Api/v2/AvailableCountries |jq -r '.[] | [.key, .value] | @csv'|sed 's/\"//g' > list_of_countries.txt
+          is_today_holiday=`curl -s https://date.nager.at/Api/v2/NextPublicHolidaysWorldwide | jq -r  ".[0] |.date" |grep $date_today`
+          next_holiday=`curl -s https://date.nager.at/Api/v2/NextPublicHolidaysWorldwide | jq -r  ".[0] |.date"`
+
+          if [[ -z "$is_today_holiday" ]]
+          then
+          cat << EOF >> /var/www/html/index.html
+          <!DOCTYPE html>
+          <html>
+          <header>
+          <title>Hello world</title>
+          </header>
+          <body>
+          <p>Hello world !!!</p>
+          <p>Today is $date_time </p>
+          <p>Next holiday is on $next_holiday </p>
+          </body>
+          </html>
+          EOF
+
+          else
+          country_code=`curl -s https://date.nager.at/Api/v2/NextPublicHolidaysWorldwide | jq -r  ".[0] |[.date,.countryCode]| @csv" |grep $date_today|sed 's/\"//g' |awk -F "," '{print $2}'`
+          country=`grep $country_code list_of_countries.txt |awk -F "," '{print $2}'`
+          cat << EOF >> /var/www/html/index.html
+          <!DOCTYPE html>
+          <html>
+          <header>
+          <title>Hello world</title>
+          </header>
+          <body>
+          <p>Hello world !!!</p>
+          <p>Today is $date_time </p>
+          <p>Today is a holiday in $country</p>
+          </body>
+          </html>
+          EOF
+          fi
+
+  GreenWebServerGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      LaunchConfigurationName: !Ref LaunchConfigGreen
+      AvailabilityZones: ["us-east-1b"]
+      MinSize: "1"
+      MaxSize: "2"
+      DesiredCapacity: 1
+      TargetGroupARNs:
+        - !Ref GreenTargetGroup
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: True
+  LaunchConfigGreen:
+    Type: "AWS::AutoScaling::LaunchConfiguration"
+    Properties:
+      ImageId: ami-0fc61db8544a617ed
+      InstanceType: t2.nano
+      SecurityGroups:
+        - !Ref SecurityGroup
+      # KeyName: !Ref KeyName
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -x
+          yum -y install httpd
+          date_today=`date`
+          cat << EOF >> /var/www/html/index.html
+          <!DOCTYPE html>
+          <html>
+          <header>
+          <title>Hello world</title>
+          </header>
+          <body>
+          <p>Hello world !!!</p>
+          <p>Today is $date_today</p>
+          </body>
+          </html>
+          EOF
+          service httpd start
+          chkconfig httpd on
+          yum -y update
+          LOCAL_IPV4=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)
+          cat << EOF >> /etc/hosts
+          $LOCAL_IPV4  holiday-aware-web
+          EOF
+          echo > /etc/sysconfig/network
+          cat << EOF >> /etc/sysconfig/network
+          NETWORKING=yes
+          HOSTNAME=holiday-aware-web
+          NOZEROCONF=yes
+          EOF
+          hostname holiday-aware-web
+          service network restart
+
+Outputs:
+  WebsiteURL:
+    Description: URL for newly created Hello World stack
+    Value: !Join
+      - ""
+      - - "http://"
+        - !GetAtt
+          - ApplicationLoadBalancer
+          - DNSName
