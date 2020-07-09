@@ -1,6 +1,6 @@
 # <div align="center">Hello World Application</div>
 
-This is a AWS hosted Hello World application that determines the if today is a holiday in any country using the [Date Nagger](https://date.nager.at/) API. I have designed 2 version for this application:
+This is a AWS hosted Hello World application that determines if today is a holiday in any country using the [Date Nagger](https://date.nager.at/) API. I have designed 2 version for this application:
 
     1. Holiday Unaware 
     2. Holiday Aware
